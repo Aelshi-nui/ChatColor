@@ -5,9 +5,13 @@ import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
 
 import java.util.HashMap;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 // Utils for managing cross-api-version compatability.
 public class CompatabilityUtils {
+
+    private static final Pattern VERSION_PATTERN = Pattern.compile("^(\\d+)(?:\\.(\\d+))?");
 
     private static boolean isMaterialLegacy;
     private static boolean isHexLegacy;
@@ -20,7 +24,6 @@ public class CompatabilityUtils {
 
     public static void init() {
         String version = Bukkit.getBukkitVersion();
-        version = version.substring(0, version.indexOf('-'));
 
         isHexLegacy = isLegacyHexVersion(version);
         isMaterialLegacy = Material.getMaterial("INK_SAC") == null;
@@ -40,25 +43,29 @@ public class CompatabilityUtils {
     }
 
     private static boolean isLegacyHexVersion(String version) {
-        String[] parts = version.split("\\.");
-
-        try {
-            int majorVersion = Integer.parseInt(parts[0]);
-
-            if (majorVersion > 1) {
-                return false;
-            }
-
-            if (parts.length < 2) {
-                return true;
-            }
-
-            int minorVersion = Integer.parseInt(parts[1]);
-            return minorVersion < 16;
-        }
-        catch (NumberFormatException ex) {
+        if (version == null) {
             return false;
         }
+
+        Matcher matcher = VERSION_PATTERN.matcher(version);
+
+        if (!matcher.find()) {
+            return false;
+        }
+
+        int majorVersion = Integer.parseInt(matcher.group(1));
+
+        if (majorVersion > 1) {
+            return false;
+        }
+
+        String minorVersion = matcher.group(2);
+
+        if (minorVersion == null) {
+            return true;
+        }
+
+        return Integer.parseInt(minorVersion) < 16;
     }
 
     public static ItemStack getColouredItem(String materialName) {
