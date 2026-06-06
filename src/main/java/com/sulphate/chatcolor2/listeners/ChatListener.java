@@ -15,8 +15,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.AsyncPlayerChatEvent;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
@@ -38,7 +40,7 @@ public class ChatListener implements Listener, Reloadable {
         this.groupColoursManager = groupColoursManager;
         this.dataStore = dataStore;
 
-        pausedPlayers = new HashSet<>();
+        pausedPlayers = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
         reload();
     }
@@ -220,11 +222,14 @@ public class ChatListener implements Listener, Reloadable {
             permission = "chatcolor.color." + colourName;
         }
 
-        Set<Character> mods = data.getModifiers();
+        Set<Character> allowedMods = new HashSet<>();
 
-        for (char mod : mods) {
+        for (char mod : new HashSet<>(data.getModifiers())) {
             if (!player.hasPermission("chatcolor.modifier." + mod)) {
-                mods.remove(mod);
+                data.removeModifier(mod);
+            }
+            else {
+                allowedMods.add(mod);
             }
         }
 
@@ -237,7 +242,7 @@ public class ChatListener implements Listener, Reloadable {
             }
         }
 
-        for (char mod : mods) {
+        for (char mod : allowedMods) {
             data.addModifier(mod);
         }
     }

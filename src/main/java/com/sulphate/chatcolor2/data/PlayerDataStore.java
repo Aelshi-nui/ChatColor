@@ -1,15 +1,15 @@
 package com.sulphate.chatcolor2.data;
 
-import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 public abstract class PlayerDataStore {
 
     protected final Map<UUID, PlayerData> dataMap;
 
     public PlayerDataStore() {
-        dataMap = new HashMap<>();
+        dataMap = new ConcurrentHashMap<>();
     }
 
     public PlayerData getPlayerData(UUID uuid) {

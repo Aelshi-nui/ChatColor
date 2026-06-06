@@ -19,14 +19,10 @@ public class CompatabilityUtils {
     }
 
     public static void init() {
-        // Parse minor version to check for hex compatability.
         String version = Bukkit.getBukkitVersion();
         version = version.substring(0, version.indexOf('-'));
 
-        int dotIndex = version.indexOf('.');
-        float minorVersion = Float.parseFloat(version.substring(dotIndex + 1));
-
-        isHexLegacy = minorVersion < 16;
+        isHexLegacy = isLegacyHexVersion(version);
         isMaterialLegacy = Material.getMaterial("INK_SAC") == null;
 
         blockColourToDataMap = new HashMap<>();
@@ -40,6 +36,28 @@ public class CompatabilityUtils {
         String[] dyeColourNames = { "INK", "RED", "GREEN", "COCOA", "LAPIS", "PURPLE", "CYAN", "LIGHT_GRAY", "GRAY", "PINK", "LIME", "YELLOW", "LIGHT_BLUE", "MAGENTA", "ORANGE", "BONE", "BLACK", "BROWN", "BLUE", "WHITE" };
         for (int i = 0; i < dyeColourNames.length; i++) {
             dyeColourToDataMap.put(dyeColourNames[i], (short) i);
+        }
+    }
+
+    private static boolean isLegacyHexVersion(String version) {
+        String[] parts = version.split("\\.");
+
+        try {
+            int majorVersion = Integer.parseInt(parts[0]);
+
+            if (majorVersion > 1) {
+                return false;
+            }
+
+            if (parts.length < 2) {
+                return true;
+            }
+
+            int minorVersion = Integer.parseInt(parts[1]);
+            return minorVersion < 16;
+        }
+        catch (NumberFormatException ex) {
+            return false;
         }
     }
 

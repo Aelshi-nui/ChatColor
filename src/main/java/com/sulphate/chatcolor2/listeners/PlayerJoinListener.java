@@ -6,6 +6,7 @@ import com.sulphate.chatcolor2.main.ChatColor;
 import com.sulphate.chatcolor2.managers.ConfigsManager;
 import com.sulphate.chatcolor2.managers.CustomColoursManager;
 import com.sulphate.chatcolor2.managers.GroupColoursManager;
+import com.sulphate.chatcolor2.schedulers.SchedulerAdapter;
 import com.sulphate.chatcolor2.utils.Config;
 import com.sulphate.chatcolor2.utils.GeneralUtils;
 import com.sulphate.chatcolor2.utils.Reloadable;
@@ -55,24 +56,30 @@ public class PlayerJoinListener implements Listener, Reloadable {
         Player player = event.getPlayer();
         UUID uuid = player.getUniqueId();
 
-        dataStore.loadPlayerData(uuid, loaded -> {
-            if (loaded) {
-                if (dataStore.getColour(uuid) == null) {
-                    setInitialColour(uuid);
-                }
+        dataStore.loadPlayerData(uuid, loaded ->
+                SchedulerAdapter.runForEntity(ChatColor.getPlugin(), player, () -> handleLoadedPlayer(player, uuid, loaded))
+        );
+    }
 
-                checkCustomColour(uuid);
+    private void handleLoadedPlayer(Player player, UUID uuid, boolean loaded) {
+        if (!loaded || !player.isOnline()) {
+            return;
+        }
 
-                // Check their default colour.
-                generalUtils.checkDefault(uuid);
+        if (dataStore.getColour(uuid) == null) {
+            setInitialColour(uuid);
+        }
 
-                sendJoinMessage(player);
+        checkCustomColour(uuid);
 
-                if (GeneralUtils.check(player)) {
-                    player.sendMessage(M.PREFIX + M.PLUGIN_NOTIFICATION.replace("[version]", ChatColor.getPlugin().getDescription().getVersion()));
-                }
-            }
-        });
+        // Check their default colour.
+        generalUtils.checkDefault(uuid);
+
+        sendJoinMessage(player);
+
+        if (GeneralUtils.check(player)) {
+            player.sendMessage(M.PREFIX + M.PLUGIN_NOTIFICATION.replace("[version]", ChatColor.getPlugin().getDescription().getVersion()));
+        }
     }
 
     private void sendJoinMessage(Player player) {

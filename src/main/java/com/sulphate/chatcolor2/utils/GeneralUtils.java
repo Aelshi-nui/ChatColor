@@ -24,6 +24,10 @@ public class GeneralUtils implements Reloadable {
     private static final String BASE_COLOUR_PATTERN = "&([a-f0-9]|#[0-9A-Fa-f]{6}|[ug]\\[(#[0-9A-Fa-f]{6}|[0-9A-Fa-f])(,(#[0-9A-Fa-f]{6}|[0-9A-Fa-f]))*])(&[k-o])*";
     public static final Pattern COLOUR_PATTERN = Pattern.compile(String.format("^%s$", BASE_COLOUR_PATTERN));
     public static final Pattern COLOUR_IN_MESSAGE_PATTERN = Pattern.compile(BASE_COLOUR_PATTERN);
+    private static final Pattern HEX_COLOUR_PATTERN = Pattern.compile("&#[A-Fa-f0-9]{6}");
+    private static final Pattern LOOSE_HEX_COLOUR_PATTERN = Pattern.compile("#[A-Fa-f0-9]{6}");
+    private static final Pattern SPECIAL_COLOUR_PATTERN = Pattern.compile("(&[ug]\\[[^\\[\\]]+])((&[klmno])*)?");
+    private static final Pattern SPECIAL_COLOUR_VALUE_PATTERN = Pattern.compile("&[ug]\\[(([0-9a-f],)|(#[0-9a-fA-F]{6},))*([0-9a-f]|(#[0-9a-fA-F]{6}))]");
 
     private enum SpecialColorType {
         RAINBOW,
@@ -136,8 +140,7 @@ public class GeneralUtils implements Reloadable {
         }
 
         // Replace hex colour codes with the correct hex colour(s).
-        Pattern hexPattern = Pattern.compile("&#[A-Fa-f0-9]{6}");
-        Matcher matcher = hexPattern.matcher(partial);
+        Matcher matcher = HEX_COLOUR_PATTERN.matcher(partial);
 
         StringBuffer result = new StringBuffer();
 
@@ -155,16 +158,15 @@ public class GeneralUtils implements Reloadable {
 
     public static boolean containsHexColour(String message, boolean strict) {
         if (strict) {
-            return Pattern.compile("&#[a-fA-F0-9]{6}").matcher(message).find();
+            return HEX_COLOUR_PATTERN.matcher(message).find();
         }
         else {
-            return Pattern.compile("#[a-fA-F0-9]{6}").matcher(message).find();
+            return LOOSE_HEX_COLOUR_PATTERN.matcher(message).find();
         }
     }
 
     private static String colouriseSpecial(String message, SpecialColorType type) {
-        Pattern pattern = Pattern.compile("(&[ug]\\[[^\\[\\]]+])((&[klmno])*)?");
-        Matcher matcher = pattern.matcher(message);
+        Matcher matcher = SPECIAL_COLOUR_PATTERN.matcher(message);
 
         if (matcher.find()) {
             String unparsedSpecial = matcher.group(1);
@@ -184,7 +186,7 @@ public class GeneralUtils implements Reloadable {
                 return message;
             }
 
-            message = pattern.matcher(message).replaceAll("");
+            message = SPECIAL_COLOUR_PATTERN.matcher(message).replaceAll("");
             return applySpecial(parsedSpecial, mods, message);
         }
 
@@ -240,7 +242,7 @@ public class GeneralUtils implements Reloadable {
             toValidate = toValidate.substring(1);
         }
 
-        return Pattern.compile("#[a-fA-F0-9]{6}").matcher(toValidate).matches();
+        return LOOSE_HEX_COLOUR_PATTERN.matcher(toValidate).matches();
     }
 
     private static String createHexColour(String hexString) {
@@ -254,8 +256,7 @@ public class GeneralUtils implements Reloadable {
     }
 
     private static List<String> parseSpecialColour(String toParse) {
-        Pattern pattern = Pattern.compile("&[ug]\\[(([0-9a-f],)|(#[0-9a-fA-F]{6},))*([0-9a-f]|(#[0-9a-fA-F]{6}))]");
-        Matcher matcher = pattern.matcher(toParse);
+        Matcher matcher = SPECIAL_COLOUR_VALUE_PATTERN.matcher(toParse);
 
         if (matcher.matches()) {
             int start = toParse.indexOf('[');
@@ -456,19 +457,13 @@ public class GeneralUtils implements Reloadable {
     @NotNull
     private static Map<Integer, String> getPlaceholdersMap(String message, List<String> placeholders) {
         Map<Integer, String> placeholdersMap = new TreeMap<>();
-        String messageToCheck = message;
+        for (String placeholder : placeholders) {
+            int index = message.indexOf(placeholder);
 
-        // Iterate over the message, removing one character at a time to build a map of all placeholders.
-        for (int i = 0; i < message.length(); i++) {
-            for (String placeholder : placeholders) {
-                int index = messageToCheck.indexOf(placeholder);
-
-                if (index != -1) {
-                    placeholdersMap.put(index + i, placeholder);
-                }
+            while (index != -1) {
+                placeholdersMap.put(index, placeholder);
+                index = message.indexOf(placeholder, index + 1);
             }
-
-            messageToCheck = messageToCheck.substring(1);
         }
 
         return placeholdersMap;
