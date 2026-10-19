@@ -33,6 +33,8 @@ public class ChatListener implements Listener, Reloadable {
 
     private YamlConfiguration mainConfig;
     private final Set<Player> pausedPlayers;
+    private final Set<String> loggedWarnings;
+    private final Set<UUID> debuggingPlayers;
 
     public ChatListener(ConfigsManager configsManager, GeneralUtils generalUtils, GroupColoursManager groupColoursManager, PlayerDataStore dataStore) {
         this.configsManager = configsManager;
@@ -41,6 +43,8 @@ public class ChatListener implements Listener, Reloadable {
         this.dataStore = dataStore;
 
         pausedPlayers = Collections.newSetFromMap(new ConcurrentHashMap<>());
+        loggedWarnings = Collections.newSetFromMap(new ConcurrentHashMap<>());
+        debuggingPlayers = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
         reload();
     }
@@ -60,12 +64,92 @@ public class ChatListener implements Listener, Reloadable {
         }
     }
 
-    public void onEvent(AsyncPlayerChatEvent event) {
-        Player player = event.getPlayer();
-        String message = event.getMessage();
+    /**
+     * Toggles per-message chat debug logging for a player.
+     *
+     * @return {@code true} if logging is now enabled.
+     */
+    public boolean toggleDebug(Player player) {
         UUID uuid = player.getUniqueId();
 
-        if (event.isCancelled() || checkHasSymbolPrefix(message) || pausedPlayers.contains(player)) {
+        if (debuggingPlayers.remove(uuid)) {
+            return false;
+        }
+
+        debuggingPlayers.add(uuid);
+        return true;
+    }
+
+    public boolean isDebugging(UUID uuid) {
+        return debuggingPlayers.contains(uuid);
+    }
+
+    public void logDebug(UUID uuid, String label, String value) {
+        if (debuggingPlayers.contains(uuid)) {
+            // The value is appended outside of the colouriser so its colour codes stay visible.
+            Bukkit.getConsoleSender().sendMessage(
+                    GeneralUtils.colourise("&b[ChatColor debug] &f" + label + ": &a")
+                            + (value == null ? "null" : value.replace('\u00a7', '&'))
+            );
+        }
+    }
+
+    public void onEvent(AsyncPlayerChatEvent event) {
+        handle(event.getPlayer(), new LegacyChatMessage(event));
+    }
+
+    /**
+     * Resolves the colour a player's chat should use right now, taking the default colour, group colours and forced
+     * group colours into account.
+     *
+     * @return the colour, or {@code null} if this player's chat should not be coloured at all.
+     */
+    public String resolveColour(Player player) {
+        if (pausedPlayers.contains(player)) {
+            return null;
+        }
+
+        UUID uuid = player.getUniqueId();
+        String colour = dataStore.getColour(uuid);
+
+        if (colour == null) {
+            if (!mainConfig.getBoolean(Setting.DEFAULT_COLOR_ENABLED.getConfigPath())) {
+                return null;
+            }
+
+            colour = mainConfig.getString("default.color");
+        }
+
+        String groupColour = groupColoursManager.getGroupColourForPlayer(player);
+
+        if (groupColour != null && mainConfig.getBoolean(Setting.FORCE_GROUP_COLORS.getConfigPath())) {
+            colour = groupColour;
+        }
+
+        return colour == null || colour.isEmpty() ? null : colour;
+    }
+
+    /**
+     * Applies the player's current colour to the given text. Used to re-apply the colour late in the chat pipeline,
+     * after other chat plugins have had their say.
+     *
+     * @return the coloured text, or {@code null} if this player's chat should not be coloured.
+     */
+    public String colourFor(Player player, String text) {
+        String colour = resolveColour(player);
+
+        if (colour == null || text == null || text.isEmpty()) {
+            return null;
+        }
+
+        return generalUtils.colouriseMessage(colour, text, false);
+    }
+
+    public void handle(Player player, ChatMessage chat) {
+        String message = chat.getMessage();
+        UUID uuid = player.getUniqueId();
+
+        if (chat.isCancelled() || checkHasSymbolPrefix(message) || pausedPlayers.contains(player)) {
             return;
         }
 
@@ -76,7 +160,7 @@ public class ChatListener implements Listener, Reloadable {
         if (dataStore.getColour(uuid) == null) {
             if (defaultColourEnabled) {
                 String defaultColor = mainConfig.getString("default.color");
-                colourAndModify(player, message, defaultColor, event);
+                colourAndModify(player, message, defaultColor, chat);
             }
 
             return;
@@ -84,16 +168,26 @@ public class ChatListener implements Listener, Reloadable {
 
         // Check default colour.
         if (defaultColourEnabled) {
-            generalUtils.checkDefault(uuid);
+            try {
+                generalUtils.checkDefault(uuid);
+            }
+            catch (Exception ex) {
+                logOnce("Failed to check the default colour for " + uuid + ": " + ex);
+            }
         }
 
         // Check if the player should have their colour reset.
         if (mainConfig.getBoolean(Setting.REMOVE_INACCESSIBLE_COLORS.getConfigPath())) {
-            String colour = dataStore.getColour(uuid);
-            String colourName = dataStore.getPlayerData(uuid).getColourName();
+            try {
+                String currentColour = dataStore.getColour(uuid);
+                PlayerData data = dataStore.getPlayerData(uuid);
 
-            if (!hasDefaultOrGroupColour(player, colour)) {
-                removeInaccessibleColour(player, colourName);
+                if (data != null && currentColour != null && !hasDefaultOrGroupColour(player, currentColour)) {
+                    removeInaccessibleColour(player, data.getColourName());
+                }
+            }
+            catch (Exception ex) {
+                logOnce("Failed to check inaccessible colours for " + uuid + ": " + ex);
             }
         }
 
@@ -110,7 +204,7 @@ public class ChatListener implements Listener, Reloadable {
             }
         }
 
-        colourAndModify(player, message, colour, event);
+        colourAndModify(player, message, colour, chat);
     }
 
     private boolean checkHasSymbolPrefix(String message) {
@@ -124,7 +218,7 @@ public class ChatListener implements Listener, Reloadable {
         }
     }
 
-    private void colourAndModify(Player player, String message, String colour, AsyncPlayerChatEvent event) {
+    private void colourAndModify(Player player, String message, String colour, ChatMessage chat) {
         if (GeneralUtils.isDifferentWhenColourised(message)) {
             boolean override = mainConfig.getBoolean(Setting.COLOR_OVERRIDE.getConfigPath());
 
@@ -134,25 +228,41 @@ public class ChatListener implements Listener, Reloadable {
                     message = org.bukkit.ChatColor.stripColor(GeneralUtils.colourise(message));
                 }
 
-                event.setMessage(message);
+                chat.setMessage(message);
             }
             else {
-                event.setMessage(GeneralUtils.colourise(message));
+                chat.setMessage(GeneralUtils.colourise(message));
             }
         }
         else {
             boolean eventSucceeded;
 
             try {
-                eventSucceeded = fireEvent(player, message, colour, event);
+                eventSucceeded = fireEvent(player, message, colour, chat.getLegacyEvent());
             }
             catch (Exception ex) {
-                eventSucceeded = false;
+                // A failure to deliver the API event must not stop the player's colour from being applied.
+                logOnce("Failed to fire ChatColorEvent, colouring anyway: " + ex);
+                eventSucceeded = true;
             }
 
             if (eventSucceeded) {
-                event.setMessage(generalUtils.colouriseMessage(colour, message, false));
+                String finalColour = colour;
+                chat.setRecolourFunction(text -> generalUtils.colouriseMessage(finalColour, text, false));
+
+                String coloured = generalUtils.colouriseMessage(colour, message, false);
+                chat.setMessage(coloured);
+
+                logDebug(player.getUniqueId(), "colour", colour);
+                logDebug(player.getUniqueId(), "message set to", coloured);
             }
+        }
+    }
+
+    // Avoids spamming the console if something is persistently broken.
+    private void logOnce(String message) {
+        if (loggedWarnings.add(message)) {
+            GeneralUtils.sendConsoleMessage("&b[ChatColor] &eWarning: " + message);
         }
     }
 
@@ -248,10 +358,43 @@ public class ChatListener implements Listener, Reloadable {
     }
 
     private boolean fireEvent(Player player, String message, String colour, AsyncPlayerChatEvent chatEvent) {
-        ChatColorEvent chatColorEvent = new ChatColorEvent(player, message, colour, chatEvent);
+        // Bukkit will not dispatch an async event from a tick thread, so match the current context.
+        boolean async = !Bukkit.isPrimaryThread();
+        ChatColorEvent chatColorEvent = new ChatColorEvent(player, message, colour, chatEvent, async);
         Bukkit.getPluginManager().callEvent(chatColorEvent);
 
         return !chatColorEvent.isCancelled();
+    }
+
+    // Wraps Spigot's legacy chat event.
+    private static final class LegacyChatMessage implements ChatMessage {
+
+        private final AsyncPlayerChatEvent event;
+
+        private LegacyChatMessage(AsyncPlayerChatEvent event) {
+            this.event = event;
+        }
+
+        @Override
+        public String getMessage() {
+            return event.getMessage();
+        }
+
+        @Override
+        public void setMessage(String message) {
+            event.setMessage(message);
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return event.isCancelled();
+        }
+
+        @Override
+        public AsyncPlayerChatEvent getLegacyEvent() {
+            return event;
+        }
+
     }
 
 }

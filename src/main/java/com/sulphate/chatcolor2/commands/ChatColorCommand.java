@@ -13,7 +13,10 @@ import org.bukkit.Sound;
 import org.bukkit.command.*;
 import org.bukkit.configuration.file.YamlConfiguration;
 import org.bukkit.entity.Player;
+import org.bukkit.event.HandlerList;
+import org.bukkit.event.player.AsyncPlayerChatEvent;
 import org.bukkit.plugin.Plugin;
+import org.bukkit.plugin.RegisteredListener;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.*;
@@ -74,6 +77,53 @@ public class ChatColorCommand implements CommandExecutor, Reloadable {
         mainConfig = configsManager.getConfig(Config.MAIN_CONFIG);
     }
 
+    // Builds a diagnostic report, which makes chat-plugin conflicts and colour resolution problems obvious.
+    private List<String> buildDebugReport(Player player) {
+        List<String> lines = new ArrayList<>();
+        UUID uuid = player.getUniqueId();
+
+        String storedColour = dataStore.getColour(uuid);
+        String resolvedColour = storedColour != null && storedColour.startsWith("%")
+                ? customColoursManager.getCustomColour(storedColour)
+                : storedColour;
+        String sample = generalUtils.colouriseMessage(storedColour, "sample", false);
+
+        lines.add(GeneralUtils.colourise("&b&lChatColor debug"));
+        lines.add(entry("Plugin", ChatColor.getPlugin().getDescription().getVersion()));
+        lines.add(entry("Server", Bukkit.getName() + " " + Bukkit.getVersion()));
+        lines.add(entry("Bukkit version", Bukkit.getBukkitVersion() + " (legacy hex: " + CompatabilityUtils.isHexLegacy() + ")"));
+        lines.add(entry("Chat event in use", ChatColor.getChatEventMode()));
+        lines.add(entry("Your stored colour", storedColour));
+        lines.add(entry("Resolved to", resolvedColour));
+        lines.add(entry("Coloured sample", sample));
+        lines.add(GeneralUtils.colourise("&7Rendered sample: &r") + sample);
+        lines.add(entry("Listeners on the legacy chat event", listeners(AsyncPlayerChatEvent.getHandlerList())));
+        lines.add(entry("Listeners on the modern chat event", ChatColor.getModernChatListeners()));
+        lines.add(entry("Chat logging", (chatListener.toggleDebug(player) ? "enabled" : "disabled") + " (see console when you chat)"));
+
+        return lines;
+    }
+
+    // Values are deliberately not run through the colouriser, so colour codes stay readable instead of being applied.
+    private static String entry(String label, String value) {
+        return GeneralUtils.colourise("&7" + label + ": &f") + escape(value);
+    }
+
+    private static String listeners(HandlerList handlerList) {
+        StringBuilder builder = new StringBuilder();
+
+        for (RegisteredListener listener : handlerList.getRegisteredListeners()) {
+            builder.append(listener.getPlugin().getName()).append('(').append(listener.getPriority()).append(") ");
+        }
+
+        return builder.length() == 0 ? "none" : builder.toString().trim();
+    }
+
+    // Makes colour codes readable instead of invisible.
+    private static String escape(String value) {
+        return value == null ? "null" : value.replace('\u00a7', '&');
+    }
+
     public boolean onCommand(@NotNull CommandSender sender, @NotNull Command cmd, @NotNull String label, String[] args) {
         // Settings values used below.
         boolean notifyOthers = mainConfig.getBoolean(Setting.NOTIFY_OTHERS.getConfigPath());
@@ -93,9 +143,17 @@ public class ChatColorCommand implements CommandExecutor, Reloadable {
                 args = new String[] { "gui" };
             }
 
-            List<String> cmds = Arrays.asList("clear", "confirm", "help", "set", "reset", "reload", "available", "gui", "add", "remove", "group", "custom", "pause");
+            List<String> cmds = Arrays.asList("clear", "confirm", "help", "set", "reset", "reload", "available", "gui", "add", "remove", "group", "custom", "pause", "debug");
             if (cmds.contains(args[0].toLowerCase())) {
                 switch (args[0].toLowerCase()) {
+                    case "debug": {
+                        for (String line : buildDebugReport(s)) {
+                            s.sendMessage(line);
+                        }
+
+                        return true;
+                    }
+
                     case "clear": {
                         dataStore.setColour(s.getUniqueId(), "");
                         s.sendMessage(M.PREFIX + M.COLOR_CLEARED);
@@ -495,7 +553,7 @@ public class ChatColorCommand implements CommandExecutor, Reloadable {
         }
 
         // Single-argument commands.
-        List<String> cmds = Arrays.asList("confirm", "reload", "reset", "help", "available", "pause");
+        List<String> cmds = Arrays.asList("confirm", "reload", "reset", "help", "available", "pause", "debug");
         if (cmds.contains(args[0])) {
             if (args[0].equalsIgnoreCase("reset") && confirmationsManager.isConfirming(player)) {
                 player.sendMessage(M.PREFIX + M.ALREADY_CONFIRMING);

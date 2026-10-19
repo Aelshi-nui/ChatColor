@@ -40,6 +40,8 @@ public class ChatColor extends JavaPlugin {
 
     private static ChatColor plugin;
     private static List<Reloadable> reloadables;
+    private static String chatEventMode = "unknown";
+    private static boolean modernChatInUse;
 
     private HandlersManager handlersManager;
     private ConfigUtils configUtils;
@@ -54,6 +56,7 @@ public class ChatColor extends JavaPlugin {
 
     private PlayerJoinListener joinListener;
     private ChatListener chatListener;
+    private Object zelChatModule;
     private YamlConfiguration config;
 
     private final ConsoleCommandSender console = Bukkit.getConsoleSender();
@@ -65,6 +68,25 @@ public class ChatColor extends JavaPlugin {
 
     public static List<Reloadable> getReloadables() {
         return reloadables;
+    }
+
+    /** Describes which chat event the plugin registered on, for the debug command. */
+    public static String getChatEventMode() {
+        return chatEventMode;
+    }
+
+    /** Lists the plugins listening to the modern chat event, for the debug command. */
+    public static String getModernChatListeners() {
+        if (!modernChatInUse) {
+            return "n/a (modern chat event not in use)";
+        }
+
+        try {
+            return PaperChatListener.describeListeners();
+        }
+        catch (Throwable ex) {
+            return "unavailable (" + ex + ")";
+        }
     }
 
     @Override
@@ -87,7 +109,7 @@ public class ChatColor extends JavaPlugin {
         // Startup messages.
         for (String message : M.STARTUP_MESSAGES) {
             message = message.replace("[version]", getDescription().getVersion());
-            message = message.replace("[version-description]", "SQL support tweaks & bug fixes.");
+            message = message.replace("[version-description]", "Chat plugin compatibility fixes.");
             console.sendMessage(M.PREFIX + GeneralUtils.colourise(message));
         }
 
@@ -132,6 +154,17 @@ public class ChatColor extends JavaPlugin {
 
     @Override
     public void onDisable() {
+        if (zelChatModule != null) {
+            try {
+                ZelChatListener.unregister(this, zelChatModule);
+            }
+            catch (Throwable ex) {
+                // ZelChat may already have shut down; nothing useful to do here.
+            }
+
+            zelChatModule = null;
+        }
+
         guiManager.closeOpenGuis();
         playerDataStore.shutdown();
         plugin = null;
@@ -220,14 +253,15 @@ public class ChatColor extends JavaPlugin {
         EventPriority chatPriority = EventPriority.valueOf(config.getString("settings.event-priority"));
         chatListener = new ChatListener(configsManager, generalUtils, groupColoursManager, playerDataStore);
 
-        EventExecutor executor = (listener, event) -> {
-            if (listener instanceof ChatListener && event instanceof AsyncPlayerChatEvent) {
-                ((ChatListener) listener).onEvent((AsyncPlayerChatEvent) event);
-            }
-        };
+        // ZelChat renders chat itself and ignores the chat events, so when it is installed the colour has to be
+        // applied through its module system instead.
+        if (isZelChatPresent()) {
+            registerZelChatModule();
+        }
 
-        // Attempt to register
-        manager.registerEvent(AsyncPlayerChatEvent.class, chatListener, chatPriority, executor, this);
+        if (zelChatModule == null) {
+            registerChatEventListener(chatPriority);
+        }
 
         joinListener = new PlayerJoinListener(
                 M, configsManager, generalUtils, customColoursManager, groupColoursManager, playerDataStore
@@ -241,6 +275,92 @@ public class ChatColor extends JavaPlugin {
         reloadables.add(joinListener);
         reloadables.add(chatListener);
         reloadables.add(commandListener);
+    }
+
+    private void registerChatEventListener(EventPriority chatPriority) {
+        // Colour on the legacy chat event. Many chat plugins still read (or cancel and re-send) that event, so this is
+        // where the colour has to be applied for them to pick it up.
+        EventExecutor executor = (listener, event) -> {
+            if (listener instanceof ChatListener && event instanceof AsyncPlayerChatEvent) {
+                ((ChatListener) listener).onEvent((AsyncPlayerChatEvent) event);
+            }
+        };
+
+        manager.registerEvent(AsyncPlayerChatEvent.class, chatListener, chatPriority, executor, this);
+        chatEventMode = "chat event at " + chatPriority;
+
+        // On Paper, additionally re-apply the colour at render time. Chat plugins strip formatting the player has no
+        // permission for (EssentialsX does this at LOWEST), which also removes the colour ChatColor just applied.
+        boolean useModernChat = !config.contains(Setting.USE_MODERN_CHAT_EVENT.getConfigPath())
+                || config.getBoolean(Setting.USE_MODERN_CHAT_EVENT.getConfigPath());
+
+        if (useModernChat && isModernChatSupported()) {
+            try {
+                PaperChatListener.register(this, chatListener);
+                modernChatInUse = true;
+                chatEventMode += " + render-time safety net";
+            }
+            catch (Throwable ex) {
+                GeneralUtils.sendConsoleMessage(M.PREFIX + GeneralUtils.colourise(
+                        "&eCould not install the render-time colour safety net: " + ex
+                ));
+            }
+        }
+    }
+
+    // ChatColor soft-depends on ZelChat, so ZelChat has already enabled and provided its API by this point. If it
+    // has not, fall straight back to the chat events rather than leaving chat uncoloured.
+    private void registerZelChatModule() {
+        try {
+            zelChatModule = ZelChatListener.register(this, chatListener);
+            chatEventMode = "ZelChat module (priority HIGHEST)";
+            GeneralUtils.sendConsoleMessage(M.PREFIX + GeneralUtils.colourise("&aHooked into ZelChat."));
+        }
+        catch (Throwable ex) {
+            zelChatModule = null;
+
+            GeneralUtils.sendConsoleMessage(M.PREFIX + GeneralUtils.colourise(
+                    "&eZelChat is installed but its API could not be used (" + ex + ")."
+                            + " Colours will be applied through the chat events instead."
+            ));
+        }
+    }
+
+    private boolean isZelChatPresent() {
+        if (manager.getPlugin("ZelChat") == null) {
+            return false;
+        }
+
+        try {
+            Class.forName("it.pino.zelchat.api.ZelChatAPI");
+            return true;
+        }
+        catch (ClassNotFoundException | LinkageError ex) {
+            GeneralUtils.sendConsoleMessage(M.PREFIX + GeneralUtils.colourise(
+                    "&eZelChat was found but its API is not available; please update ZelChat."
+            ));
+
+            return false;
+        }
+    }
+
+    // Checks (without loading any Paper-only classes) whether Paper's component-based chat API is present.
+    private static boolean isModernChatSupported() {
+        String[] requiredClasses = {
+                "io.papermc.paper.event.player.AsyncChatEvent",
+                "net.kyori.adventure.text.serializer.legacy.LegacyComponentSerializer"
+        };
+
+        for (String className : requiredClasses) {
+            try {
+                Class.forName(className);
+            }
+            catch (ClassNotFoundException | LinkageError ex) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private boolean validateConfig() {

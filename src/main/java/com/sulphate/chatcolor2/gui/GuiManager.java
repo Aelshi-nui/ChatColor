@@ -1,5 +1,6 @@
 package com.sulphate.chatcolor2.gui;
 
+import com.sulphate.chatcolor2.data.PlayerData;
 import com.sulphate.chatcolor2.data.PlayerDataStore;
 import com.sulphate.chatcolor2.exception.InvalidGuiException;
 import com.sulphate.chatcolor2.exception.InvalidItemTemplateException;
@@ -202,9 +203,17 @@ public class GuiManager implements Reloadable, Listener {
             return null;
         }
 
+        PlayerData playerData = dataStore.getPlayerData(player.getUniqueId());
+
+        // Their data has not finished loading (or failed to load) - opening the GUI now would fail.
+        if (playerData == null) {
+            player.sendMessage(M.PREFIX + Messages.INTERNAL_GUI_ERROR);
+            return null;
+        }
+
         try {
             ConfigurationSection section = guiConfigs.get(name);
-            return new Gui(name, section, player, dataStore.getPlayerData(player.getUniqueId()), this, generalUtils, customColoursManager, M);
+            return new Gui(name, section, player, playerData, this, generalUtils, customColoursManager, M);
         }
         catch (InvalidGuiException ex) {
             player.sendMessage(M.PREFIX + M.GUI_ERROR.replace("[name]", name));

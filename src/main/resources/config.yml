@@ -26,6 +26,11 @@ settings:
   command-opens-gui: false
   ignore-symbol-prefixes: true
   remove-inaccessible-colors: false
+  # On Paper (and forks such as Folia), also re-apply the colour when the chat line is rendered.
+  # Other chat plugins strip formatting players have no permission for (EssentialsX does this), which
+  # otherwise removes the colour ChatColor applied. This puts it back, after everything else has run.
+  # Set this to false to only use the chat event. Requires a server restart to take effect.
+  use-modern-chat-event: true
 placeholders:
   - '[item]'
 default:

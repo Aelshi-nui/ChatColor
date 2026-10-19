@@ -73,17 +73,28 @@ public class YamlStorageImpl extends PlayerDataStore {
     public void savePlayerData(UUID uuid) {
         PlayerData data = dataMap.get(uuid);
 
+        // Nothing loaded for this player - nothing to save.
+        if (data == null) {
+            return;
+        }
+
         // Don't try to save temporary data.
         if (data.isTemporary() || !data.isDirty()) {
             return;
         }
 
+        // Will (re)load the config from disk if it is not currently in memory.
         YamlConfiguration config = configsManager.getPlayerConfig(uuid);
+
+        if (config == null) {
+            GeneralUtils.sendConsoleMessage(M.PREFIX + String.format(Messages.FAILED_TO_ACCESS_PLAYER_FILE, uuid));
+            return;
+        }
 
         config.set("color", data.getColour());
         config.set("default-code", data.getDefaultCode());
 
-        saveScheduler.saveConfigWithDelay("players" + File.separator + uuid + ".yml", config);
+        saveScheduler.saveConfigWithDelay(ConfigsManager.getPlayerConfigPath(uuid), config);
         data.markClean();
     }
 

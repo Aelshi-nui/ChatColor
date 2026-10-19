@@ -18,7 +18,15 @@ public class ChatColorEvent extends Event implements Cancellable {
     private boolean cancelled;
 
     public ChatColorEvent(Player player, String message, String colour, AsyncPlayerChatEvent chatEvent) {
-        super(true);
+        this(player, message, colour, chatEvent, true);
+    }
+
+    /**
+     * @param async whether the event is being fired from an asynchronous context. Bukkit refuses to dispatch an
+     *              asynchronous event from a server tick thread (and vice versa), so this must match reality.
+     */
+    public ChatColorEvent(Player player, String message, String colour, AsyncPlayerChatEvent chatEvent, boolean async) {
+        super(async);
 
         handlerList = new HandlerList();
         cancelled = false;
@@ -57,6 +65,12 @@ public class ChatColorEvent extends Event implements Cancellable {
         return colour;
     }
 
+    /**
+     * The legacy chat event which triggered this colour change.
+     *
+     * @return the legacy chat event, or {@code null} when the server is using Paper's modern component-based chat
+     *         event (see the {@code use-modern-chat-event} setting).
+     */
     public AsyncPlayerChatEvent getChatEvent() {
         return chatEvent;
     }

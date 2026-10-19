@@ -397,8 +397,14 @@ public class GeneralUtils implements Reloadable {
     public String colouriseMessage(String colour, String message, boolean checkOverride) {
         String colourisedMessage = message;
 
+        if (colour == null) {
+            colour = "";
+        }
+
         if (isCustomColour(colour)) {
-            colour = customColoursManager.getCustomColour(colour);
+            String customColour = customColoursManager.getCustomColour(colour);
+            // If the custom colour has been removed from the config, don't colour with a literal "null".
+            colour = customColour == null ? "" : customColour;
         }
 
         // Check the override if the coloured message is different.

@@ -156,7 +156,7 @@ public class SqlStorageImpl extends PlayerDataStore {
     public void savePlayerData(UUID uuid) {
         PlayerData data = dataMap.get(uuid);
 
-        if (data.isTemporary() || !data.isDirty()) {
+        if (data == null || data.isTemporary() || !data.isDirty()) {
             return;
         }
 

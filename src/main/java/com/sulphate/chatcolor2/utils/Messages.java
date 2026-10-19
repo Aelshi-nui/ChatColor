@@ -163,6 +163,7 @@ public class Messages implements Reloadable {
     public static final String INVALID_CUSTOM_COLOUR = "Invalid custom colour item in GUI %s: %s, skipping.";
     public static final String INVALID_GUI_ITEM = "Invalid GUI item: %s";
     public static final String PLAYER_HEADS_NOT_SUPPORTED = "Player heads are not available on this version of Minecraft. Please remove all player heads from the GUI.";
+    public static final String FAILED_TO_ACCESS_PLAYER_FILE = "&cError: Failed to access the data file for player %s, their colour was not saved.";
 
     public void reloadMessages() {
         config = configsManager.getConfig(Config.MESSAGES);

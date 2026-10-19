@@ -4,7 +4,7 @@
 
   <groupId>me.sulphate</groupId>
   <artifactId>ChatColor2</artifactId>
-  <version>1.16.1</version>
+  <version>1.16.4</version>
   <name>ChatColor2</name>
 
   <properties>
@@ -37,6 +37,12 @@
     <repository>
       <id>minecraft-repo</id>
       <url>https://libraries.minecraft.net/</url>
+    </repository>
+
+    <!-- ZelChat API, for the optional chat integration. -->
+    <repository>
+      <id>pinodev-repo</id>
+      <url>https://repo.pinodev.it/releases</url>
     </repository>
   </repositories>
 
@@ -86,6 +92,15 @@
       <groupId>com.mojang</groupId>
       <artifactId>authlib</artifactId>
       <version>1.5.21</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- ZelChat API (optional integration - ZelChat renders chat itself, so the colour has to be applied
+         through its module system rather than through the Bukkit/Paper chat events). -->
+    <dependency>
+      <groupId>it.pino.zelchat</groupId>
+      <artifactId>zelchat-api</artifactId>
+      <version>2.0.0-pre-27</version>
       <scope>provided</scope>
     </dependency>
 

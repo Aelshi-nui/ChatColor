@@ -19,20 +19,34 @@ public abstract class PlayerDataStore {
     public abstract void loadPlayerData(UUID uuid, Callback<Boolean> callback);
 
     public String getColour(UUID uuid) {
-        return dataMap.get(uuid).getColour();
+        PlayerData data = dataMap.get(uuid);
+        return data == null ? null : data.getColour();
     }
 
     public void setColour(UUID uuid, String colour) {
-        dataMap.get(uuid).setColour(colour);
+        PlayerData data = dataMap.get(uuid);
+
+        if (data == null) {
+            return;
+        }
+
+        data.setColour(colour);
         savePlayerData(uuid);
     }
 
     public long getDefaultCode(UUID uuid) {
-        return dataMap.get(uuid).getDefaultCode();
+        PlayerData data = dataMap.get(uuid);
+        return data == null ? -1 : data.getDefaultCode();
     }
 
     public void setDefaultCode(UUID uuid, long defaultCode) {
-        dataMap.get(uuid).setDefaultCode(defaultCode);
+        PlayerData data = dataMap.get(uuid);
+
+        if (data == null) {
+            return;
+        }
+
+        data.setDefaultCode(defaultCode);
         savePlayerData(uuid);
     }
 
